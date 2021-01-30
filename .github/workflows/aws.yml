@@ -1,0 +1,68 @@
+name: CI/CD-Pipeline-to-AWS-S3
+
+env:
+  EB_PACKAGE_S3_BUCKET_NAME: "siarhei-kvachenok-github-actions-pipeline"
+  EB_APPLICATION_NAME: "GithubActionsPipeline"
+  EB-ENVIRONMENT_NAME: "githubactionspipeline-env"
+  ARTIFACT_NAME: "build"
+  AWS_REGION_NAME: "us-east-1"
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  CI-part:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [ 14.x ]
+
+    steps:
+      - name: Git clone repo
+        uses: actions/checkout@v2
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install, build
+        run: |
+          yarn
+          yarn run build
+
+      - name: Upload artifact for CD-part
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{env.ARTIFACT_NAME}}
+          path: build
+
+      - name: CI completed
+        run: echo "CI Pipeline finished successfully!"
+
+  CD-part:
+    runs-on: ubuntu-latest
+    needs: [CI-part]
+
+    steps:
+      - name: Download artifact from CI-part
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{env.ARTIFACT_NAME}}
+          path: build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ env.AWS_REGION_NAME }}
+
+      - name: Copy Deployment package to S3 bucket
+        run: aws s3 sync ${{env.ARTIFACT_NAME}} s3://${{ env.EB_PACKAGE_S3_BUCKET_NAME }} --delete
+
+      - name: CD completed
+        run: echo "CD Pipeline finished successfully!"
